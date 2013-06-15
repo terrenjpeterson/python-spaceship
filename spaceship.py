@@ -7,19 +7,23 @@ import random
 WIDTH = 800
 HEIGHT = 600
 score = 0
-lives = 3
-drag_coef = 0.02
+lives = 0
+drag_coef = 0.03
 missle_speed = 10
 time = 0.5
 ship_radius = 45
 number_of_rocks = 10
-sprites = []
+points_to_bonus = 500
+rock_group = []
+missile_group = []
+explosion_group = []
 
 class ImageInfo:
     def __init__(self, center, size, radius = 0, lifespan = None, animated = False):
         self.center = center
         self.size = size
         self.radius = radius
+        self.target_size = [radius * 2, radius * 2]
         if lifespan:
             self.lifespan = lifespan
         else:
@@ -31,6 +35,9 @@ class ImageInfo:
 
     def get_size(self):
         return self.size
+    
+    def get_target_size(self):
+        return self.target_size
 
     def get_radius(self):
         return self.radius
@@ -66,12 +73,14 @@ missile_info = ImageInfo([5,5], [10, 10], 3, 50)
 missile_image = simplegui.load_image("http://commondatastorage.googleapis.com/codeskulptor-assets/lathrop/shot2.png")
 
 # asteroid images - asteroid_blue.png, asteroid_brown.png, asteroid_blend.png
-asteroid_info = ImageInfo([45, 45], [90, 90], 40)
-asteroid_image = simplegui.load_image("http://commondatastorage.googleapis.com/codeskulptor-assets/lathrop/asteroid_blue.png")
+asteroid_info = ImageInfo([45, 45], [90, 90], 45)
+asteroid_info_medium = ImageInfo([45, 45], [90, 90], 30)
+asteroid_info_small = ImageInfo([45, 45], [90, 90], 15)
+asteroid_image = simplegui.load_image("http://commondatastorage.googleapis.com/codeskulptor-assets/lathrop/asteroid_blend.png")
 
 # animated explosion - explosion_orange.png, explosion_blue.png, explosion_blue2.png, explosion_alpha.png
-explosion_info = ImageInfo([64, 64], [128, 128], 17, 24, True)
-explosion_image = simplegui.load_image("http://commondatastorage.googleapis.com/codeskulptor-assets/lathrop/explosion_alpha.png")
+explosion_info = ImageInfo([64, 64], [64, 64], 17, 24, True)
+explosion_image = simplegui.load_image("http://commondatastorage.googleapis.com/codeskulptor-assets/lathrop/explosion_blue.png")
 
 # sound assets purchased from sounddogs.com, please do not redistribute
 soundtrack = simplegui.load_sound("http://commondatastorage.googleapis.com/codeskulptor-assets/sounddogs/soundtrack.mp3")
@@ -108,7 +117,6 @@ class Ship:
             canvas.draw_image(ship_image, (135, 45), (90, 90), (self.pos[0], self.pos[1]), (90, 90), self.angle)                   
         else:
             canvas.draw_image(ship_image, (45, 45), (90, 90), (self.pos[0], self.pos[1]), (90, 90), self.angle)       
-#       canvas.draw_circle(self.pos, self.radius, 1, "White", "White")
     
     def update(self):
         # factor in friction
@@ -158,8 +166,7 @@ class Ship:
         x_vel = missle_vel[0] * missle_speed + my_ship.vel[0]
         y_vel = missle_vel[1] * missle_speed + my_ship.vel[1]
 
-        # reset the missle direction based on the new ship position
-        a_missile.change_direction(x_pos, y_pos, x_vel, y_vel, 0)
+        missile_group.append(Sprite([x_pos, y_pos], [x_vel, y_vel], 0, 0, missile_image, missile_info, missile_sound))
         self.missile_in_flight = True
 
         if self.fired_missile:
@@ -167,6 +174,22 @@ class Ship:
             fired_missle = False
         else:
             missile_sound.rewind()
+            
+    def ship_crash(self):
+        global lives
+        # reduce number of lives by 1
+        lives -= 1
+        explosion_sound.play()
+        explosion_group.append(Sprite(my_ship.pos, [0, 0], 0, 0, explosion_image, explosion_info))
+        # reset ship to middle of the screen
+        my_ship.pos[0] = WIDTH / 2
+        my_ship.pos[1] = HEIGHT / 2
+        # remove all the rocks from the screen
+        num_rocks = len(rock_group)
+        while num_rocks > 0:
+            rock_group.pop()
+            num_rocks -= 1
+
 
 # Sprite class
 class Sprite:
@@ -179,6 +202,7 @@ class Sprite:
         self.image_center = info.get_center()
         self.image_size = info.get_size()
         self.radius = info.get_radius()
+        self.target_size = info.get_target_size()
         self.lifespan = info.get_lifespan()
         self.animated = info.get_animated()
         self.age = 0
@@ -187,14 +211,15 @@ class Sprite:
 #            sound.play()
    
     def draw(self, canvas):
-#        canvas.draw_circle(self.pos, self.radius, 1, "Red", "Red")
-        canvas.draw_image(self.image, self.image_center, self.image_size, (self.pos[0], self.pos[1]), self.image_size, self.angle)
+        canvas.draw_image(self.image, self.image_center, self.image_size, (self.pos[0], self.pos[1]), self.target_size, self.angle)
         
     def update(self):
         self.pos[0] += self.vel[0]
         self.pos[1] += self.vel[1]
         self.angle += self.angle_vel
+        self.age += 1
 #        print "angle", self.angle, " velocity", self.angle_vel
+
 
         # check to see if the sprite has drifted from map    
         if self.pos[0] > WIDTH:
@@ -207,24 +232,56 @@ class Sprite:
         elif self.pos[1] < 0:
             self.pos[1] += HEIGHT        
     
-    def change_direction(self, x_pos, y_pos, x_vel, y_vel, new_angle_vel):
-        self.pos = [x_pos, y_pos]
-        self.vel = [x_vel, y_vel] 
-        self.angle_vel = new_angle_vel
-#        print "new angle velocity", self.angle_vel
-
-    def check_if_hit(self, x_pos, y_pos, rock_id):
-        global score
-        distance = dist(a_missile.pos, [x_pos, y_pos])
-        if distance < 45:
-#            print "hit rock", distance, rock_id
-            my_ship.missile_in_flight = False
-            sprites.pop(rock_id)
-            score += 1
+    def check_if_hit(self, rock_x, rock_y, rock_id, missile_x, missile_y):
+        global score, lives, points_to_bonus
+        distance = dist([missile_x, missile_y], [rock_x, rock_y])
+        if distance < (self.radius):
+        # if missile hits the rock, destroy it and increment score
+            missile_group.pop(0)
+            explosion_group.append(Sprite([rock_x, rock_y], [0, 0], 0, 0, explosion_image, explosion_info))
+            rock_group.pop(rock_id)
+            # check if rock was large, if so split into two
+            if self.radius == asteroid_info.radius:
+                # collision with large asteroid
+                new_rock_vel_x = random.randrange(-2, 2)
+                new_rock_vel_y = random.randrange(1, 2)
+                rock_group.append(Sprite([rock_x, rock_y], [new_rock_vel_x, new_rock_vel_y], 0, -.1, asteroid_image, asteroid_info_medium))
+                rock_group.append(Sprite([rock_x, rock_y], [new_rock_vel_x, -new_rock_vel_y], 0, .1, asteroid_image, asteroid_info_medium))
+                score += 10
+                points_to_bonus -= 10
+            elif self.radius == asteroid_info_medium.radius:
+                # collision with medium asteroid
+                new_rock_vel_x = random.randrange(-4, 4)
+                new_rock_vel_y = random.randrange(1, 4)
+                rock_group.append(Sprite([rock_x, rock_y], [new_rock_vel_x, new_rock_vel_y], 0, -.1, asteroid_image, asteroid_info_small))
+                rock_group.append(Sprite([rock_x, rock_y], [new_rock_vel_x, -new_rock_vel_y], 0, .1, asteroid_image, asteroid_info_small))
+                score += 25
+                points_to_bonus -= 25
+            else:
+                # collision with small asteroid
+                score += 50
+                points_to_bonus -= 50
+            if points_to_bonus < 0:
+            # check if bonus level has been met
+                lives += 1
+                points_to_bonus += 500
+            explosion_sound.rewind()
+            explosion_sound.play()
         return distance
 
+    def check_if_crash(self, rock_x, rock_y, rock_id):
+        global lives
+        # calculate distance between ship and current rock
+        distance = dist(my_ship.pos, [rock_x, rock_y])
+        if distance < (self.radius + my_ship.radius):
+#            print self.radius, distance, my_ship.radius
+        # if ship crashes into the rock, destroy it and reduce the number of lives
+            rock_group.pop(rock_id)
+            my_ship.ship_crash()
+        return distance
+    
 def draw(canvas):
-    global time
+    global time, lives
     
     # animiate background
     time += 1
@@ -237,32 +294,74 @@ def draw(canvas):
     canvas.draw_image(debris_image, [size[0] - wtime, center[1]], [2 * wtime, size[1]], 
                                 [1.25 * wtime, HEIGHT / 2], [2.5 * wtime, HEIGHT])
 
-    # draw ship and update
-    my_ship.draw(canvas)
-    my_ship.update()
-    
-    if my_ship.missile_in_flight:
-        a_missile.draw(canvas)
-        a_missile.update()
-
-    rock_id = 0    
+    # draw spash image if game is not in action (no lives exist)    
+    if lives == 0:
+        canvas.draw_image(splash_image, (200, 150), (400, 300), (WIDTH / 2, 175), (400, 300))
+        canvas.draw_text("Begin with three lives", [25, 375], 20, "White", "monospace")
+        canvas.draw_image(ship_image, [45, 45], [90, 90], [100, 450], [90, 90], 4.75)
+        canvas.draw_image(ship_image, [45, 45], [90, 90], [175, 450], [90, 90], 4.75)
+        canvas.draw_image(ship_image, [45, 45], [90, 90], [250, 450], [90, 90], 4.75)
+        canvas.draw_text("Bonus life every 500 points", [25, 550], 20, "White", "monospace")
+        canvas.draw_text("Score by exploding rocks", [425, 375], 20, "White", "monospace")
+        canvas.draw_text("Large - 10 points", [400, 425], 20, "White", "monospace")
+        canvas.draw_text("Medium - 25 points", [400, 500], 20, "White", "monospace")      
+        canvas.draw_text("Small - 50 points", [400, 550], 20, "White", "monospace")      
+        canvas.draw_image(asteroid_image, [45, 45], [90, 90], [700, 425], [90, 90])
+        canvas.draw_image(asteroid_image, [45, 45], [90, 90], [700, 500], [50, 50])
+        canvas.draw_image(asteroid_image, [45, 45], [90, 90], [700, 550], [30, 30])
+        soundtrack.play()
         
-    for sp in sprites:
-        if my_ship.missile_in_flight:
-            x = int(sp.pos[0])
-            y = int(sp.pos[1])
-            sp.check_if_hit(x, y, rock_id)
+    # draw ship and update
+    if lives > 0:
+        my_ship.draw(canvas)
+        my_ship.update()
+    
+    if len(missile_group) > 0:
+    # update missiles
+        missile_num = 0
+        for m in missile_group:
+            m.update()
+            m.draw(canvas)
+            missile_x = m.pos[0]
+            missile_y = m.pos[1]
+            if m.age > m.lifespan:
+                missile_group.pop(missile_num)
+            missile_num += 1
+
+    rock_id = 0            
+    for sp in rock_group:
+        rock_x = int(sp.pos[0])
+        rock_y = int(sp.pos[1])
+        if len(missile_group) > 0:
+        # for each missile, check if hit rock
+            sp.check_if_hit(rock_x, rock_y, rock_id, missile_x, missile_y)
         sp.update()
         sp.draw(canvas)
+        # check if ship crashed into rock
+        sp.check_if_crash(rock_x, rock_y, rock_id)
         rock_id += 1
-        
+
+    if len(explosion_group) > 0:
+    # if any explosions exist, animate them
+        explosion_id = 0
+        for ex in explosion_group:
+            ex.update()
+            ex.draw(canvas)
+            frame_x = ex.age * ex.image_center[1]
+            frame_y = ex.image_center[1]
+            if ex.age > ex.lifespan:
+                explosion_group.pop(explosion_id)
+            else:    
+                ex.image_center = [frame_x, frame_y]
+            explosion_id += 1
+    
     # print the score and number of lives remaining    
     canvas.draw_text("Lives : " + str(lives), [50, 50], 20, "White", "monospace")
     canvas.draw_text("Score : " + str(score), [650, 50], 20, "White", "monospace")
     
 # timer handler that spawns a rock    
 def rock_spawner():
-    # for now this randomly moves the rock and changes direction
+    # this creates a large rock instance with random position, velocity, and spin
     rock_pos_x = random.randrange(0, WIDTH)
     rock_pos_y = random.randrange(0, HEIGHT)
     rock_pos = [rock_pos_x, rock_pos_y]
@@ -271,13 +370,18 @@ def rock_spawner():
     rock_vel = [rock_vel_x, rock_vel_y]
     rock_ang_vel = (random.randrange(-10, 10)) / 100
 
-    # if the maximum number of rocks exist, remove the oldest
-    if len(sprites) > number_of_rocks - 1:
-        sprites.pop(0)    
-    sprites.append(Sprite(rock_pos, rock_vel, 0, rock_ang_vel, asteroid_image, asteroid_info))
+    # check if rock will spawn too close to ship
+    distance = dist(my_ship.pos, [rock_pos_x, rock_pos_y])
+    if distance < 100:
+        pass
+#        print "too close to spawn"
+    # as long as the maximum number has not been exceeded, add the rock to the group
+    elif len(rock_group) < number_of_rocks - 1 and lives > 0:
+        rock_group.append(Sprite(rock_pos, rock_vel, 0, rock_ang_vel, asteroid_image, asteroid_info))
     
 # functions that handle when keys are pressed
 def keydown(key):
+    global lives
     # key functions for when keys are pressed
     if key == simplegui.KEY_MAP['up']:
         my_ship.thrust = True
@@ -288,8 +392,9 @@ def keydown(key):
     elif key == simplegui.KEY_MAP['left']:
         my_ship.angle_vel -= 1
     elif key == simplegui.KEY_MAP['space']:
-        my_ship.shoot_missile()
-        my_ship.fired_missile = True
+        if lives > 0:
+            my_ship.shoot_missile()
+            my_ship.fired_missile = True
         
 def keyup(key):
     # key functions for when keys are released
@@ -300,22 +405,26 @@ def keyup(key):
     elif key == simplegui.KEY_MAP['left']:
         my_ship.angle_vel += 1
     elif key == simplegui.KEY_MAP['space']:
-        my_ship.fire_missle = False
+        my_ship.fired_missle = False
+        
+def mouseclick(position):
+    global lives, score, points_to_bonus
+    if lives == 0:
+        lives = 2
+        score = 0
+        points_to_bonus = 500
         
 # initialize frame
 frame = simplegui.create_frame("Asteroids", WIDTH, HEIGHT)
 
-# initialize ship and two sprites
+# initialize ship in the middle of the screen
 my_ship = Ship([WIDTH / 2, HEIGHT / 2], [0, 0], 0, ship_image, ship_info)
-a_rock = Sprite([WIDTH / 3, HEIGHT / 3], [1, 1], 0, 0.05, asteroid_image, asteroid_info)
-a_missile = Sprite([2 * WIDTH / 3, 2 * HEIGHT / 3], [-5,5], 0, 0, missile_image, missile_info, missile_sound)
-sprites.append(Sprite([WIDTH / 3, HEIGHT / 3], [1, 1], 0, 0.05, asteroid_image, asteroid_info))
-
 
 # register handlers
 frame.set_draw_handler(draw)
 frame.set_keydown_handler(keydown)
 frame.set_keyup_handler(keyup)
+frame.set_mouseclick_handler(mouseclick)
 
 timer = simplegui.create_timer(1000.0, rock_spawner)
 
