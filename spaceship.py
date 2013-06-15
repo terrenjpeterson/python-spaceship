@@ -82,7 +82,8 @@ asteroid_info_small = ImageInfo([45, 45], [90, 90], 15)
 asteroid_image = simplegui.load_image("http://commondatastorage.googleapis.com/codeskulptor-assets/lathrop/asteroid_blend.png")
 
 # animated explosion - explosion_orange.png, explosion_blue.png, explosion_blue2.png, explosion_alpha.png
-explosion_info = ImageInfo([64, 64], [128, 128], 64, 900, True)
+explosion_info = ImageInfo([64, 64], [128, 128], 64, 50, True)
+explosion_info_ship = ImageInfo([64, 64], [128, 128], 128, 50, True)
 explosion_image = simplegui.load_image("http://commondatastorage.googleapis.com/codeskulptor-assets/lathrop/explosion_blue2.png")
 explosion_image_ship = simplegui.load_image("http://commondatastorage.googleapis.com/codeskulptor-assets/lathrop/explosion_orange.png")
 
@@ -184,7 +185,7 @@ class Ship:
         # reduce number of lives by 1
         lives -= 1
         explosion_sound.play()
-        explosion_group.append(Sprite(my_ship.pos, [0, 0], 0, 0, explosion_image_ship, explosion_info))
+        explosion_group.append(Sprite(my_ship.pos, [0, 0], 0, 0, explosion_image_ship, explosion_info_ship))
         # reset ship to middle of the screen
         my_ship.pos[0] = WIDTH / 2
         my_ship.pos[1] = HEIGHT / 2
@@ -223,8 +224,6 @@ class Sprite:
         self.angle += self.angle_vel
         self.age += 1
 #        print "angle", self.angle, " velocity", self.angle_vel
-
-
         # check to see if the sprite has drifted from map    
         if self.pos[0] > WIDTH:
             self.pos[0] -= WIDTH
@@ -244,6 +243,7 @@ class Sprite:
             missile_group.pop(0)
             explosion_group.append(Sprite([rock_x, rock_y], [0, 0], 0, 0, explosion_image, explosion_info))
             rock_group.pop(rock_id)
+#            print rock_id, " has been hit"
             # check if rock was large, if so split into two
             if self.radius == asteroid_info.radius:
                 # collision with large asteroid
@@ -321,28 +321,29 @@ def draw(canvas):
         my_ship.update()
     
     if len(missile_group) > 0:
-    # update missiles
+    # process missiles if they have been launched
         missile_num = 0
         for m in missile_group:
             m.update()
             m.draw(canvas)
-            missile_x = m.pos[0]
-            missile_y = m.pos[1]
+            rock_id = 0            
+            for rock in rock_group:
+                # check each rock if the missile hit it
+                if len(missile_group) > 0:
+                    rock.check_if_hit(rock.pos[0], rock.pos[1], rock_id, m.pos[0], m.pos[1])
+                rock_id += 1
+            # if missile has exceeded life expectancy, remove
             if m.age > m.lifespan:
                 missile_group.pop(missile_num)
             missile_num += 1
 
     rock_id = 0            
-    for sp in rock_group:
-        rock_x = int(sp.pos[0])
-        rock_y = int(sp.pos[1])
-        if len(missile_group) > 0:
-        # for each missile, check if hit rock
-            sp.check_if_hit(rock_x, rock_y, rock_id, missile_x, missile_y)
-        sp.update()
-        sp.draw(canvas)
+    for rock in rock_group:
+        # update rocks
+        rock.update()
+        rock.draw(canvas)
         # check if ship crashed into rock
-        sp.check_if_crash(rock_x, rock_y, rock_id)
+        rock.check_if_crash(rock.pos[0], rock.pos[1], rock_id)
         rock_id += 1
 
     if len(explosion_group) > 0:
