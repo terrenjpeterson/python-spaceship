@@ -1,4 +1,6 @@
-# program template for Spaceship
+# spaceship game for Rice Python Class
+# terrenjpeterson
+#
 import simplegui
 import math
 import random
@@ -10,6 +12,7 @@ score = 0
 lives = 0
 drag_coef = 0.03
 missle_speed = 10
+explosion_speed = 1
 time = 0.5
 ship_radius = 45
 number_of_rocks = 10
@@ -79,8 +82,9 @@ asteroid_info_small = ImageInfo([45, 45], [90, 90], 15)
 asteroid_image = simplegui.load_image("http://commondatastorage.googleapis.com/codeskulptor-assets/lathrop/asteroid_blend.png")
 
 # animated explosion - explosion_orange.png, explosion_blue.png, explosion_blue2.png, explosion_alpha.png
-explosion_info = ImageInfo([64, 64], [64, 64], 17, 24, True)
-explosion_image = simplegui.load_image("http://commondatastorage.googleapis.com/codeskulptor-assets/lathrop/explosion_blue.png")
+explosion_info = ImageInfo([64, 64], [128, 128], 64, 900, True)
+explosion_image = simplegui.load_image("http://commondatastorage.googleapis.com/codeskulptor-assets/lathrop/explosion_blue2.png")
+explosion_image_ship = simplegui.load_image("http://commondatastorage.googleapis.com/codeskulptor-assets/lathrop/explosion_orange.png")
 
 # sound assets purchased from sounddogs.com, please do not redistribute
 soundtrack = simplegui.load_sound("http://commondatastorage.googleapis.com/codeskulptor-assets/sounddogs/soundtrack.mp3")
@@ -180,7 +184,7 @@ class Ship:
         # reduce number of lives by 1
         lives -= 1
         explosion_sound.play()
-        explosion_group.append(Sprite(my_ship.pos, [0, 0], 0, 0, explosion_image, explosion_info))
+        explosion_group.append(Sprite(my_ship.pos, [0, 0], 0, 0, explosion_image_ship, explosion_info))
         # reset ship to middle of the screen
         my_ship.pos[0] = WIDTH / 2
         my_ship.pos[1] = HEIGHT / 2
@@ -281,7 +285,7 @@ class Sprite:
         return distance
     
 def draw(canvas):
-    global time, lives
+    global time, lives, explosion_speed
     
     # animiate background
     time += 1
@@ -347,8 +351,10 @@ def draw(canvas):
         for ex in explosion_group:
             ex.update()
             ex.draw(canvas)
-            frame_x = ex.age * ex.image_center[1]
+            frame_id = (ex.age * explosion_speed) // 1
+            frame_x = ex.image_center[1] + frame_id * ex.image_center[1] * 2
             frame_y = ex.image_center[1]
+#            print frame_id, frame_x, frame_y
             if ex.age > ex.lifespan:
                 explosion_group.pop(explosion_id)
             else:    
@@ -410,7 +416,7 @@ def keyup(key):
 def mouseclick(position):
     global lives, score, points_to_bonus
     if lives == 0:
-        lives = 2
+        lives = 3
         score = 0
         points_to_bonus = 500
         
